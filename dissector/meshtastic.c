@@ -26,9 +26,13 @@ static int hf_meshtastic_flags_hop_limit;
 static int hf_meshtastic_flags_want_ack;
 static int hf_meshtastic_flags_via_mqtt;
 static int hf_meshtastic_flags_hop_start;
+static int hf_meshtastic_channelhash;
+static int hf_meshtastic_nexthop;
+static int hf_meshtastic_relaynode;
+static int hf_meshtastic_payload;
 
 // Subtree pointers
-static int ett_radio;
+static int ett_header;
 static int ett_flags;
 
 static int dissect_meshtastic(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
@@ -43,7 +47,7 @@ static int dissect_meshtastic(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tre
 
   // Create subtrees
   proto_item *ti = proto_tree_add_item(tree, proto_meshtastic, tvb, 0, -1, ENC_NA);
-  proto_tree *ti_radio = proto_item_add_subtree(ti, ett_radio);
+  proto_tree *ti_radio = proto_item_add_subtree(ti, ett_header);
 
   // Destination address
   guint32 dst_addr = GUINT32_SWAP_LE_BE(tvb_get_ntohl(tvb, current_offset));
@@ -72,6 +76,23 @@ static int dissect_meshtastic(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tre
   proto_tree_add_uint(field_tree, hf_meshtastic_flags_hop_start, tvb, current_offset, 1, (flags_value >> 5) & 0b111);
   current_offset += 1;
 
+  // Channel hash
+  uint8_t channel_hash = tvb_get_uint8(tvb, current_offset);
+  proto_tree_add_uint(ti_radio, hf_meshtastic_channelhash, tvb, current_offset, 1, channel_hash);
+  current_offset += 1;
+
+  // Next hop
+  proto_tree_add_item(ti_radio, hf_meshtastic_nexthop, tvb, current_offset, 1, ENC_NA);
+  current_offset += 1;
+
+  // Relay node
+  proto_tree_add_item(ti_radio, hf_meshtastic_relaynode, tvb, current_offset, 1, ENC_NA);
+  current_offset += 1;
+
+  // Payload
+  uint16_t payload_len = tvb_captured_length_remaining(tvb, current_offset);
+  proto_tree_add_item(ti_radio, hf_meshtastic_payload, tvb, current_offset, payload_len, ENC_NA);
+
   return 0;
 }
 
@@ -87,13 +108,16 @@ void proto_register_meshtastic(void)
       {&hf_meshtastic_flags_want_ack, {"Want Ack", "meshtastic.want_ack", FT_BOOLEAN, 8, NULL, 0x08, NULL, HFILL}},
       {&hf_meshtastic_flags_via_mqtt, {"Via MQTT", "meshtastic.via_mqtt", FT_BOOLEAN, 8, NULL, 0x10, NULL, HFILL}},
       {&hf_meshtastic_flags_hop_start, {"Hop Start", "meshtastic.hop_start", FT_UINT8, BASE_DEC, NULL, 0xE0, NULL, HFILL}},
+      {&hf_meshtastic_channelhash, {"Channel Hash", "meshtastic.channelhash", FT_UINT8, BASE_DEC_HEX, NULL, 0x0, NULL, HFILL}},
+      {&hf_meshtastic_nexthop, {"Next Hop", "meshtastic.nexthop", FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL}},
+      {&hf_meshtastic_relaynode, {"Relay Node", "meshtastic.relaynode", FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL}},
+      {&hf_meshtastic_payload, {"Payload", "meshtastic.payload", FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL}},
   };
 
   // Protocol subtrees array
   static int *ett[] = {
-      &ett_radio,
+      &ett_header,
       &ett_flags,
-      //&ett_channel,
   };
 
   // Register protocol
