@@ -1,6 +1,0 @@
-{
-  "files.associations": {
-    "wsgcrypt.h": "c",
-    "stdint.h": "c"
-  }
-}
