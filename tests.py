@@ -1,41 +1,24 @@
+import os
+import pty
+import serial
+import time
 
-CHANNEL_TEST = 1
-hash_key = [0xd4, 0xf1, 0xbb, 0x3a, 0x20, 0x29, 0x07, 0x59, 0xf0, 0xbc, 0xff, 0xab, 0xcf, 0x4e, 0x69, 0x01]
-USERPREFS_CHANNEL_0_PSK = { 0x38, 0x4b, 0xbc, 0xc0, 0x1d, 0xc0, 0x22, 0xd1, 0x81, 0xbf, 0x36, 0xb8, 0x61, 0x21, 0xe1, 0xfb, 0x96, 0xb7, 0x2e, 0x55, 0xbf, 0x74, 0x22, 0x7e, 0x9d, 0x6a, 0xfb, 0x48, 0xd6, 0x4c, 0xb1, 0xa1 }
-PPSK1 = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }
-ADMIN_KEY = { 0xcd, 0xc0, 0xb4, 0x3c, 0x53, 0x24, 0xdf, 0x13, 0xca, 0x5a, 0xa6, 0x0c, 0x0d, 0xec, 0x85, 0x5a, 0x4c, 0xf6, 0x1a, 0x96, 0x04, 0x1a, 0x3e, 0xfc, 0xbb, 0x8e, 0x33, 0x71, 0xe5, 0xfc, 0xff, 0x3c }
+def create_virtual_serial():
+    master, slave = pty.openpty()  # Crea el pseudoterminal
+    slave_name = os.ttyname(slave)  # Obtiene el nombre del dispositivo
 
-CHANNEL_DEFAULT_NAME = b"ShortSlow"
-CHANNEL_NAME_CUSTOM = b"Custom"
+    print(f"📡 Dispositivo virtual creado: {slave_name}")
+    print(f"🔌 Conéctate usando: screen {slave_name} 115200")
 
-print(hash_key)
-print(bytes([0]))
-print(bytes([1]))
+    try:
+        while True:
+            data = os.read(master, 1024)  # Lee datos si alguien se conecta
+            print(f"📥 Recibido: {data.decode(errors='ignore')}")
+            os.write(master, b"Respuesta desde el serial virtual\n")
+    except KeyboardInterrupt:
+        print("\n🔴 Cerrando el puerto virtual.")
+        os.close(master)
+        os.close(slave)
 
-def xorHash(to_hash):
-  xor_result = 0
-  for b in to_hash:
-    xor_result ^= b
-  return xor_result
-
-h = xorHash(CHANNEL_DEFAULT_NAME)
-h ^= xorHash(hash_key)
-print(f"{chr(h)} {h}")
-
-DEFAULT_MESH_BASE64_KEY = "1PG7OiApB1nwvP+rz05pAQ=="
-print(len(DEFAULT_MESH_BASE64_KEY))
-print(bytes(DEFAULT_MESH_BASE64_KEY, "utf-8"))
-for i in DEFAULT_MESH_BASE64_KEY:
-  print(i.encode())
-
-
-
-def rgb_to_hex(r, g, b):
-  return "#{:02x} {:02x} {:02x}".format(r, g, b)
-
-print(f"-> {rgb_to_hex(153, 209, 219)}")
-print(f"-> {rgb_to_hex(186, 187, 241)}")
-print(f"-> {rgb_to_hex(229, 200, 144)}")
-print(f"-> {rgb_to_hex(231, 153, 156)}")
-print(f"-> {rgb_to_hex(48, 52, 70)}")
-print(f"-> {rgb_to_hex(148, 156, 186)}")
+if __name__ == "__main__":
+    create_virtual_serial()

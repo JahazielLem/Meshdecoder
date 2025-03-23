@@ -373,10 +373,9 @@
                        decrypted_offset, 4, decrypted_to);
    decrypted_offset += 4;  // to
    
-   uint32_t decrypted_channel = tvb_get_ntohl(tvb, decrypted_offset);
-   proto_tree_add_uint(decrypted_tree, hf_meshtastic_decrypted_channel, tvb,
-                       decrypted_offset, 4, decrypted_channel);
-   decrypted_offset += 4;  // channel
+   proto_tree_add_item(decrypted_tree, hf_meshtastic_decrypted_channel, tvb,
+                       decrypted_offset, 1, ENC_NA);
+   decrypted_offset += 1;  // channel
    // Skip the know information
    decrypted_offset += 4;   // Destination
    decrypted_offset += 4;   // Sender
@@ -385,16 +384,13 @@
    decrypted_offset += 1;   // Channel Hash
    decrypted_offset += 1;   // Hop
    decrypted_offset += 1;   // Relay
- 
-   // IDK WTF is this value so I skip for now
-   decrypted_offset += 1;
+   decrypted_offset += 1;   // Relay
  
    proto_tree_add_item(decrypted_tree, hf_meshtastic_decrypted_portnum, tvb,
                        decrypted_offset, 1, ENC_NA);
-   uint8_t portnum = tvb_get_uint8(tvb, 1);
-   col_set_str(pinfo->cinfo, COL_INFO,
-               val_to_str_const(portnum, meshtastic_portnum_list, "Unknown"));
+   col_set_str(pinfo->cinfo, COL_INFO, val_to_str(tvb_get_int8(tvb, 1), meshtastic_portnum_list, "Unknown"));
    decrypted_offset += 1;
+   decrypted_offset += 1; // IDK WIT
    // 12 IDK WTF is this
    proto_tree_add_item(decrypted_tree, hf_meshtastic_decrypted_payload_len, tvb,
                        decrypted_offset, 1, ENC_NA);
@@ -457,7 +453,7 @@
         {"To", "meshtastic.to", FT_UINT32, BASE_DEC, NULL, 0x0, "To Address",
          HFILL}},
        {&hf_meshtastic_decrypted_channel,
-        {"Channel", "meshtastic.channel", FT_UINT32, BASE_DEC, NULL, 0x0, "Channel", HFILL}},
+        {"Channel", "meshtastic.channel", FT_UINT8, BASE_DEC, NULL, 0x0, "Channel", HFILL}},
        {&hf_meshtastic_decrypted_portnum,
        {"Portnum", "meshtastic.portnum", FT_UINT8, BASE_DEC,
          VALS(meshtastic_portnum_list), 0x0, NULL, HFILL}},

@@ -1,21 +1,13 @@
-"""
-Instalar 
-pip install cryptography
-pip install meshtastic
-"""
-
-
 import base64
-import hashlib
+import binascii
+import struct
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.primitives.ciphers.aead import AESCCM
 from cryptography.hazmat.backends import default_backend
 from meshtastic import mesh_pb2, admin_pb2, telemetry_pb2, config_pb2
 
 DEFAULT_CHANNEL_KEY = "AQ=="
 DEFAULT_MESH_BASE64_KEY = "1PG7OiApB1nwvP+rz05pAQ=="#"AAAAAAAAAAAAAAAAAAAAAA=="
 DEFAULT_PSK_KEY = [0xd4, 0xf1, 0xbb, 0x3a, 0x20, 0x29, 0x07, 0x59, 0xf0, 0xbc, 0xff, 0xab, 0xcf, 0x4e, 0x69, 0x01]
-PSK_SHARED = "PwUVLfCEHJ9kooCXMEWG8d1hOmHztXzzvzLiBsi8jU8="
 
 meshtastic_MeshPacket_to_tag =             2
 meshtastic_MeshPacket_channel_tag =        3
@@ -41,21 +33,21 @@ class Decrypter:
 
     aes_key_len = len(base64.b64decode(key).hex())
     if aes_key_len == 32 or aes_key_len == 64:
-        print("encode: ", key.encode("ascii"))
-        return base64.b64decode(key.encode("ascii"))
+      return base64.b64decode(key.encode("ascii"))
     else:
-        raise DecrypterError(
-            f"The included AES key appears to be invalid. the key length is: {aes_key_len} and is not the key length of 128 or 256 bits."
-            )
-  def format_hex_string(self, hex_string, sufix=" "):
-    return sufix.join(hex_string[i:i+2] for i in range(0, len(hex_string), 2))
+      raise DecrypterError(
+        f"The included AES key appears to be invalid. the key length is: {aes_key_len} and is not the key length of 128 or 256 bits."
+      )
+  
+  def format_hex_with_spaces(self, hex_string):
+    return ' '.join(hex_string[i:i+2] for i in range(0, len(hex_string), 2))
 
   def xorHash(self, to_hash):
     xor_result = 0
     for b in range(len(to_hash)):
       xor_result ^= to_hash[b]
     return xor_result
-
+  
   def get_channel(self, hash, append_byte=None):
     channels_names = [b"ShortTurbo",b"ShortSlow",b"ShortFast",b"MediumSlow",b"MediumFast",b"LongSlow",b"LongFast",b"LongMod",b"VLongSlow"]
     tmp_key = DEFAULT_PSK_KEY
@@ -67,18 +59,8 @@ class Decrypter:
       if c_hashed.to_bytes(1) == hash:
           return channel
     return "Unknown"
-  
+
   def extract_data(self, data=b""):
-    # https://meshtastic.org/docsoverview/mesh-algo/#layer-1-unreliable-zero-hop-messaging
-    # Meshtastic - Layer 1
-    # 0x00 - 4 bytes Destionation NodeID - 0xFFFFFFFF (Broadcast)
-    # 0x04 - 4 bytes Sender NodeID
-    # 0x08 - 4 bytes Packer Header sending node
-    # 0x0C - 1 byte Packet Header Flags
-    # 0x0D - 1 byte Packet Header channel hash (hint for decryption)
-    # 0x0E - 1 byte Packet Header Next-hop
-    # 0x0F - 1 byte Packet Heeader relay node of the current transmission
-    # 0x10 - max 237 bytes - Packet data
     mesh_packet = {
     "dest": self.hexStringToBinary(data[0:8]),
     "sender": self.hexStringToBinary(data[8:16]),
@@ -111,79 +93,76 @@ class Decrypter:
     telem = telemetry_pb2.Telemetry()
     fromRadio = mesh_pb2.FromRadio()
     try:
-        data.ParseFromString(packet_data)
-        # position.ParseFromString(packet_data)
-        # admin.ParseFromString(packet_data)
-        # fromRadio.ParseFromString(packet_data)
+      data.ParseFromString(packet_data)
     except Exception as e:
       try:
-         print("confi")
-         config = config_pb2.Config()
-         config.ParseFromString(packet_data)
-         data = config
-      except Exception as e:
+        mesh = mesh_pb2.MeshPacket()
+        mesh.ParseFromString(packet_data)
+        data = f"Encrypted: {mesh.encrypted} MeshPacket: {mesh}"
         return data
-      print(e)
-      data = "INVALID PROTOBUF"
-      print("")
-      return data
+      except Exception as e:
+        pass
+      try:
+        info = mesh_pb2.User()
+        info.ParseFromString(packet_data)
+        return info
+      except:
+        pass
+      try:
+        config = config_pb2.Config()
+        config.ParseFromString(packet_data)
+        return config
+      except Exception:
+        return "UNKNOWN APP"
   
     match data.portnum:
       case 0: # UNKNOWN APP
         data = "UNKNOWN APP To be implemented"
       case 1: # Text Message
-          text_payload = data.payload.decode("utf-8")
-          data = f"Text Message: {str(sourceID)} -> {str(destID)} {str(text_payload)}: {text_payload} {text_payload.encode().hex()}"
+        data = mesh_pb2.Data()
+        data.ParseFromString(packet_data)
+        text_payload = data.payload.decode("latin1")
+        data = f"Text Message: {str(text_payload)}"
       case 3 : # POSITION_APP
-            pos = mesh_pb2.Position()
-            pos.ParseFromString(data.payload)
-            latitude = pos.latitude_i * 1e-7
-            longitude = pos.longitude_i * 1e-7
-            data="POSITION_APP " + str(sourceID) + " -> " + str(destID) + " " + str(latitude) +"," + str(longitude)
+        try:
+          print(data.portnum)
+          pos = mesh_pb2.Position()
+          pos.ParseFromString(data.payload)
+          latitude = telem.latitude_i * 1e-7
+          longitude = telem.longitude_i * 1e-7
+          data="POSITION_APP " + str(sourceID) + " -> " + str(destID) + " " + str(latitude) +"," + str(longitude)
+        except Exception as e:
+          data = "POSITION_APP Parse Error"
       case 4 : # NODEINFO_APP
         info = mesh_pb2.User()
         try:
             info.ParseFromString(data.payload)
         except:
             print("Unknown Nodeinfo_app parse error")
-        data = "NODEINFO_APP " + str(info)
+        data = f"NODEINFO_APP: \n{str(info)}\n{info.public_key}\n{info.public_key.hex()}"
       case 5:
         rtng = mesh_pb2.Routing()
         rtng.ParseFromString(data.payload)
         data = f"Telemetry {str(rtng)}"
-      case 65: # Forward
-          data = "Forwward"
       case 67 : # TELEMETRY_APP
         env = telemetry_pb2.Telemetry()
         env.ParseFromString(data.payload)
-        data = "TELEMETRY_APP " + str(env)
+        data = "TELEMETRY_APP " + str(env) + " " + str(env.device_metrics)
       case _:
           data = f"Not implemented Protobuf: {data.portnum}"
-    # print(f"{'='*12}Packet Info{'='*12}")
     return data
-
-  def init_nonce(self, fromNode, packetId):
-     return packetId + fromNode + b'\x00\x00\x00\x00' + b'\x00\x00\x00\x00'
-
-  def decryptCurve25510(self, fromNode, remotePublicKey, packetNum, numBytes, bytes):
-    print("Trying to decrypt with PKI")
-    print("Random nounce:", self.init_nonce(fromNode=fromNode, packetId=packetNum).hex())
-    print(numBytes)
-    print(bytes)
-    print(numBytes-12)
-    auth = bytes[numBytes - 12:]
-    print(auth)
-    # extra_nonce = struct.unpack("<I", auth[8:12])[0]
-    # print(extra_nonce)
-
-
   
   def decrypt(self, packet):
     aes_decryption_key = self.generate_aes_key()
     mesh_dict = self.extract_data(packet)
     if mesh_dict:
-      return self.decrypt_packet(mesh_dict, aes_decryption_key)
-  
+      decrypted_packet = self.decrypt_packet(mesh_dict, aes_decryption_key)
+      if decrypted_packet:
+        dec_packet = bytes.fromhex(packet[:32]) + decrypted_packet
+        mesh_dict["data_dec"] = decrypted_packet
+        self.show_details(mesh_packet=mesh_dict)
+        return dec_packet
+
   def hexdump(self, data, width=16):
     hex_lines = []
     ascii_lines = []
@@ -198,7 +177,7 @@ class Decrypter:
     return "\n".join(f"{h}  {a}" for h, a in zip(hex_lines, ascii_lines))
   
   def show_details(self, mesh_packet):
-    print(f"{'='*50} Packet Info {'='*50}")
+    print(f"\n\n{'='*50} Packet Info {'='*50}")
     print(mesh_packet)
     print(f"Dest:\t {self.msb2lsb(str(mesh_packet['dest'].hex()))}\tSender:\t {self.msb2lsb(str(mesh_packet['sender'].hex()))}\tPacketID: {self.msb2lsb(str(int(mesh_packet['packetID'].hex(), 16)))}\tChannel: 0x{mesh_packet['channelHash'].hex()}\tModem Preset: ", end="")
     if mesh_packet['channelHash'] == 0x0:
@@ -226,22 +205,5 @@ class Decrypter:
     print(f"{'-'*26} Decrypted Payload Hexdump ({len(raw_data)}) {'-'*26}")
     print(f"{self.hexdump(dec_data)}")
     print(dec_data)
-    print()
     print(self.decode_protobuf(mesh_packet["data_dec"], mesh_packet["sender"], mesh_packet["dest"]))
-    
-
-if __name__ == "__main__":
-    dec = Decrypter()
-    lest_message = [
-      b'\xff\xff\xff\xffP\xcd]\xa4\x84\x11W\\cw\x00\x00\xc55\xd8\xdb\x9b2s\x982\x99\xd7\tq\x04\xae\xa6U'.hex(),
-      b'\xff\xff\xff\xffP\xcd]\xa4\x84\x11W\\bw\x00P\xc55\xd8\xdb\x9b2s\x982\x99\xd7\tq\x04\xae\xa6U'.hex(),
-      b'\xff\xff\xff\xffP\xcd]\xa4\xc7e0`cw\x00\x00\xdfE\xe3UB\x1a\xfa; \xdfh\xaa\xce\xc6\xa0\xc0\x00\x89\x1b\x04'.hex(),
-      b'\xff\xff\xff\xffP\xcd]\xa4\xc7e0`bw\x00P\xdfE\xe3UB\x1a\xfa; \xdfh\xaa\xce\xc6\xa0\xc0\x00\x89\x1b\x04'.hex(),
-      b'\xff\xff\xff\xffP\xcd]\xa4\xb6CRdcw\x00\x00u\x98D\xaa\xf1\x84\x97W)k\xbf\xbc\x80\x96#{P\xba\x08|d\xa4\x82\xda\x00\xff'.hex(),
-    ]
-    aes_decryption_key = dec.generate_aes_key()
-    for mes in lest_message:
-      mesh_dict = dec.extract_data(mes)
-      mesh_dict["data_dec"] = dec.decrypt_packet(mesh_dict, aes_decryption_key)
-      dec.show_details(mesh_packet=mesh_dict)
-    print(b'P|I\xcaP\xcd]\xa4\x9b\xa5\xaafBw\x00\x00\x9d\x81L\xe0\x7f El\xc7\xc4\x1c\xd5<O%\xbb\xaaQ\xa2\xf3Q\x04\x14\x9a\xb1$\x08\x88\xf5\x8dh\xccZ\xaf\xbc\xf3\xec\xf6`\xa2X\x1c\x02\xd77\x93\xaa\xb9\xe3}*\xfb]DI\xb2\x95\x10\xcc\x07\x01\xd5\xa2\xcd\xa3\x0e\xc4\xfen\x90\x81\xdd\xd8\xc3ZH\xcb\xf8H&q\xff\xae"\xda]'.hex())
+    print()
