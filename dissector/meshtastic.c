@@ -7,45 +7,111 @@
  */
 
  #include <epan/packet.h>
+ #include <epan/uat.h>
  #include <wiretap/wtap.h>
  #include <wsutil/wsgcrypt.h>
  
  #define MESHTASTIC_ADDR_LEN 4
  #define MESHTASTIC_PKTID_LEN 4
  #define MESHTASTIC_CIPHER_BLOCK_LEN 16
+
+ // Common define
+ #define MESHTASTIC_BCAST_ALL 0xFFFFFF
  
  // Default 1 byte key
- static const uint8_t psk_key[] = {0xd4, 0xf1, 0xbb, 0x3a, 0x20, 0x29,
-  0x07, 0x59, 0xf0, 0xbc, 0xff, 0xab,
-  0xcf, 0x4e, 0x69, 0x01};
+static const uint8_t psk_key[] = {0xd4, 0xf1, 0xbb, 0x3a, 0x20, 0x29,
+0x07, 0x59, 0xf0, 0xbc, 0xff, 0xab,
+0xcf, 0x4e, 0x69, 0x01};
 
- // Dissector handles
- static dissector_handle_t handle_meshtastic;
+// Dissector handles
+static dissector_handle_t handle_meshtastic;
+
+// Protocol handles
+static int proto_meshtastic;
+
+// Header field handles
+static int hf_meshtastic_dst;
+static int hf_meshtastic_src;
+static int hf_meshtastic_pktid;
+static int hf_meshtastic_flags;
+static int hf_meshtastic_flags_hop_limit;
+static int hf_meshtastic_flags_want_ack;
+static int hf_meshtastic_flags_via_mqtt;
+static int hf_meshtastic_flags_hop_start;
+static int hf_meshtastic_channelhash;
+static int hf_meshtastic_nexthop;
+static int hf_meshtastic_relaynode;
+static int hf_meshtastic_payload;
+static int hf_meshtastic_decrypted_block;
+
+// Subtree pointers
+static int ett_header;
+static int ett_flags;
+
+// Meshtastic key type
+typedef struct
+{
+  char *key_name;
+  char *key_base64;
+} meshtastic_key_t;
+
+// Preferences
+static uat_t *uat_keys;
+static meshtastic_key_t *uat_meshtastic_keys;
+static unsigned uat_meshtastic_keys_num;
+
+UAT_CSTRING_CB_DEF(uat_meshtastic_keys_list, key_name, meshtastic_key_t)
+UAT_CSTRING_CB_DEF(uat_meshtastic_keys_list, key_base64, meshtastic_key_t)
  
- // Protocol handles
- static int proto_meshtastic;
- 
- // Header field handles
- static int hf_meshtastic_dst;
- static int hf_meshtastic_src;
- static int hf_meshtastic_pktid;
- static int hf_meshtastic_flags;
- static int hf_meshtastic_flags_hop_limit;
- static int hf_meshtastic_flags_want_ack;
- static int hf_meshtastic_flags_via_mqtt;
- static int hf_meshtastic_flags_hop_start;
- static int hf_meshtastic_channelhash;
- static int hf_meshtastic_nexthop;
- static int hf_meshtastic_relaynode;
- static int hf_meshtastic_payload;
- static int hf_meshtastic_decrypted_block;
- 
- // Subtree pointers
- static int ett_header;
- static int ett_flags;
- 
- static int dissect_meshtastic(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
- {
+bool uat_meshtastic_keys_fld_name_cb(void *r _U_, const char *p, unsigned len _U_, const void *u1 _U_, const void *u2 _U_, char **err)
+{
+  if (!p || strlen(p) == 0u)
+  {
+    // TODO: Can the name be empty?
+    *err = NULL;
+    return true;
+  }
+
+  *err = NULL;
+  return true;
+}
+
+bool uat_meshtastic_keys_fld_key_cb(void *r _U_, const char *p, unsigned len _U_, const void *u1 _U_, const void *u2 _U_, char **err)
+{
+  if (!p || strlen(p) == 0u)
+  {
+    *err = g_strdup("Key cannot be empty.");
+    return false;
+  }
+
+  // TODO: Check base64 format.
+
+  *err = NULL;
+  return true;
+}
+
+static void uat_meshtastic_keys_free_cb(void *r)
+{
+  meshtastic_key_t *h = (meshtastic_key_t *)r;
+  g_free(h->key_name);
+  g_free(h->key_base64);
+}
+
+static void *uat_meshtastic_keys_copy_cb(void *dest, const void *orig, size_t len _U_)
+{
+  const meshtastic_key_t *o = (const meshtastic_key_t *)orig;
+  meshtastic_key_t *d = (meshtastic_key_t *)dest;
+
+  d->key_name = g_strdup(o->key_name);
+  d->key_base64 = g_strdup(o->key_base64);
+
+  return d;
+}
+
+/* Forward declaration needed for preference registration */
+void proto_reg_handoff_meshtastic(void);
+
+static int dissect_meshtastic(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data) {
    int32_t current_offset = 0;
  
    // Set columns
@@ -168,14 +234,13 @@
        {&hf_meshtastic_nexthop, {"Next Hop", "meshtastic.nexthop", FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL}},
        {&hf_meshtastic_relaynode, {"Relay Node", "meshtastic.relaynode", FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL}},
        {&hf_meshtastic_payload, {"Payload", "meshtastic.payload", FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL}},
-       {&hf_meshtastic_decrypted_block, {"Decrypted", "meshtastic.decryp_block", FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL}},
-       
+       {&hf_meshtastic_decrypted_block, {"Decrypted", "meshtastic.decryp_block", FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL}},  
    };
  
    // Protocol subtrees array
    static int *ett[] = {
-       &ett_header,
-       &ett_flags,
+      &ett_header,
+      &ett_flags,
    };
  
    // Register protocol
@@ -189,7 +254,34 @@
  
    // Register subtrees
    proto_register_subtree_array(ett, array_length(ett));
- }
+   // Register preferences
+   module_t *meshtastic_module = prefs_register_protocol(proto_meshtastic, proto_reg_handoff_meshtastic);
+
+  static uat_field_t uat_meshtastic_key_flds[] = {
+      UAT_FLD_CSTRING_OTHER(uat_meshtastic_keys_list, key_name, "Key name", uat_meshtastic_keys_fld_name_cb, "Key name"),
+      UAT_FLD_CSTRING_OTHER(uat_meshtastic_keys_list, key_base64, "Base64 key", uat_meshtastic_keys_fld_key_cb, "Key in base64 format"),
+      UAT_END_FIELDS};
+
+  uat_keys = uat_new("Meshtastic Decrypt",
+                     sizeof(meshtastic_key_t),
+                     "meshtastic_keys",        /* filename */
+                     true,                     /* from_profile */
+                     &uat_meshtastic_keys,     /* data_ptr */
+                     &uat_meshtastic_keys_num, /* numitems_ptr */
+                     UAT_AFFECTS_DISSECTION,   /* affects dissection of packets, but not set of named fields */
+                     NULL,                     /* Help section (currently a wiki page) */
+                     uat_meshtastic_keys_copy_cb,
+                     NULL,
+                     uat_meshtastic_keys_free_cb,
+                     NULL, // ssl_parse_uat,
+                     NULL, // ssl_reset_uat,
+                     uat_meshtastic_key_flds);
+
+  prefs_register_uat_preference(meshtastic_module, "key_table",
+                                "Meshtastic keys list",
+                                "A table of Meshtastic keys for decryption",
+                                uat_keys);
+}
  
  void proto_reg_handoff_meshtastic(void)
  {
