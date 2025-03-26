@@ -6,6 +6,7 @@
  *
  */
 
+ #include <glib.h>
  #include <epan/packet.h>
  #include <epan/uat.h>
  #include <wiretap/wtap.h>
@@ -49,19 +50,41 @@ static int ett_header;
 static int ett_flags;
 
 // Meshtastic key type
+typedef enum {
+  KEY_SIZE_NONE    = 0x00,
+  KEY_SIZE_1BYTE   = 0x01,
+  KEY_SIZE_128BITS = 0x02,
+  KEY_SIZE_256BITS = 0x03,
+} meshtastic_key_sizes_type;
+
+/**
+ * If we have a channel name, we can relationate the key and channel
+ * So, when the packet is dissected, we can select which key to use
+ */
 typedef struct
 {
-  char *key_name;
+  char *key_channel_name;
   char *key_base64;
+  meshtastic_key_sizes_type key_size;
 } meshtastic_key_t;
+
+/* Enumeration for key size decryption */
+static const value_string meshtastic_key_size[] = {
+  { KEY_SIZE_NONE, "No key"},
+  { KEY_SIZE_1BYTE, "1 Byte" },
+  { KEY_SIZE_128BITS, "128 bits" },
+  { KEY_SIZE_256BITS, "256 bits" },
+  { 0, NULL }
+};
 
 // Preferences
 static uat_t *uat_keys;
 static meshtastic_key_t *uat_meshtastic_keys;
 static unsigned uat_meshtastic_keys_num;
 
-UAT_CSTRING_CB_DEF(uat_meshtastic_keys_list, key_name, meshtastic_key_t)
+UAT_CSTRING_CB_DEF(uat_meshtastic_keys_list, key_channel_name, meshtastic_key_t)
 UAT_CSTRING_CB_DEF(uat_meshtastic_keys_list, key_base64, meshtastic_key_t)
+UAT_VS_DEF(uat_meshtastic_keys_list, key_size, meshtastic_key_t, meshtastic_key_sizes_type, KEY_SIZE_1BYTE, "1 Byte")
  
 bool uat_meshtastic_keys_fld_name_cb(void *r _U_, const char *p, unsigned len _U_, const void *u1 _U_, const void *u2 _U_, char **err)
 {
@@ -78,14 +101,23 @@ bool uat_meshtastic_keys_fld_name_cb(void *r _U_, const char *p, unsigned len _U
 
 bool uat_meshtastic_keys_fld_key_cb(void *r _U_, const char *p, unsigned len _U_, const void *u1 _U_, const void *u2 _U_, char **err)
 {
-  if (!p || strlen(p) == 0u)
+  meshtastic_key_t *rec = (meshtastic_key_t *)r;
+  
+  if (rec != KEY_SIZE_NONE && (!p || strlen(p) == 0u))
   {
     *err = g_strdup("Key cannot be empty.");
     return false;
   }
-
-  // TODO: Check base64 format.
-
+  
+  /* Validate Base64 key */
+  size_t key_len;
+  char *data = g_base64_decode(rec->key_base64, &key_len);
+  if (key_len == 0){
+    *err = g_strdup("Base64 format error.");
+    free(data);
+    return false;
+  }
+  // TODO: Relation between key_size and decrypted data len
   *err = NULL;
   return true;
 }
@@ -93,7 +125,7 @@ bool uat_meshtastic_keys_fld_key_cb(void *r _U_, const char *p, unsigned len _U_
 static void uat_meshtastic_keys_free_cb(void *r)
 {
   meshtastic_key_t *h = (meshtastic_key_t *)r;
-  g_free(h->key_name);
+  g_free(h->key_channel_name);
   g_free(h->key_base64);
 }
 
@@ -102,9 +134,9 @@ static void *uat_meshtastic_keys_copy_cb(void *dest, const void *orig, size_t le
   const meshtastic_key_t *o = (const meshtastic_key_t *)orig;
   meshtastic_key_t *d = (meshtastic_key_t *)dest;
 
-  d->key_name = g_strdup(o->key_name);
+  d->key_channel_name = g_strdup(o->key_channel_name);
   d->key_base64 = g_strdup(o->key_base64);
-
+  d->key_size = o->key_size;
   return d;
 }
 
@@ -153,7 +185,6 @@ static int dissect_meshtastic(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tre
    proto_tree_add_uint(field_tree, hf_meshtastic_flags_hop_start, tvb, current_offset, 1, (flags_value >> 5) & 0b111);
    current_offset += 1;
  
-   // Channel hash
    uint8_t channel_hash = tvb_get_uint8(tvb, current_offset);
    proto_tree_add_uint(ti_radio, hf_meshtastic_channelhash, tvb, current_offset, 1, channel_hash);
    current_offset += 1;
@@ -170,6 +201,17 @@ static int dissect_meshtastic(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tre
    uint16_t payload_len = tvb_captured_length_remaining(tvb, current_offset);
    proto_tree_add_item(ti_radio, hf_meshtastic_payload, tvb, current_offset, payload_len, ENC_NA);
 
+   // Channel hash
+   /* This creapy value can change, if the channel hash are named as PwnChannel
+   * The result are 0x08 meaning that xorHash are LongFast
+   * So...IDK how to handle this information in the dissector
+   * For now if the channel_hash value are 0x00 meaning in the protocol
+   * haven't encryption so return and don't cipher 
+   */
+   if (channel_hash == 0x00) {
+    col_set_str(pinfo->cinfo, COL_INFO, "No encryption");
+    return 0;
+   }
    /**
     * Cipher block
     * We need a nonce:
@@ -258,8 +300,9 @@ static int dissect_meshtastic(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tre
    module_t *meshtastic_module = prefs_register_protocol(proto_meshtastic, proto_reg_handoff_meshtastic);
 
   static uat_field_t uat_meshtastic_key_flds[] = {
-      UAT_FLD_CSTRING_OTHER(uat_meshtastic_keys_list, key_name, "Key name", uat_meshtastic_keys_fld_name_cb, "Key name"),
-      UAT_FLD_CSTRING_OTHER(uat_meshtastic_keys_list, key_base64, "Base64 key", uat_meshtastic_keys_fld_key_cb, "Key in base64 format"),
+      UAT_FLD_CSTRING_OTHER(uat_meshtastic_keys_list, key_channel_name, "Key name", uat_meshtastic_keys_fld_name_cb, "Key name."),
+      UAT_FLD_CSTRING_OTHER(uat_meshtastic_keys_list, key_base64, "Base64 key", uat_meshtastic_keys_fld_key_cb, "Key in base64 format."),
+      UAT_FLD_VS(uat_meshtastic_keys_list, key_size, "Size", meshtastic_key_size, "Size of the key."),
       UAT_END_FIELDS};
 
   uat_keys = uat_new("Meshtastic Decrypt",
