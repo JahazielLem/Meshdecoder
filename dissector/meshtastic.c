@@ -45,9 +45,38 @@ static int hf_meshtastic_relaynode;
 static int hf_meshtastic_payload;
 static int hf_meshtastic_decrypted_block;
 
+// Meshtastic Packets types
+static int hf_mstic_type_packet;
+// Portnum 1 - Text Message
+static int hf_mstic_textapp_message_len;
+static int hf_mstic_textapp_message;
+// Portnum 3 - Position
+static int hf_mstic_position_latitude;
+// Portnum 67 - Telemetry
+// TELEMETRY_APP time: 1742950869
+// device_metrics {
+//   battery_level: 101
+//   voltage: -0.001
+//   channel_utilization: 0.27
+//   air_util_tx: 0.00450000027
+//   uptime_seconds: 45
+// }
+//  battery_level: 101
+// voltage: -0.001
+// channel_utilization: 0.27
+// air_util_tx: 0.00450000027
+// uptime_seconds: 45
+
+static int hf_mstic_telemetry_time;
+static int hf_mstic_telemetry_dev_battery;
+static int hf_mstic_telemetry_dev_voltage;
+static int hf_mstic_telemetry_dev_channel;
+static int hf_mstic_telemetry_dev_air;
+
 // Subtree pointers
 static int ett_header;
 static int ett_flags;
+static int ett_cipher_block;
 
 // Meshtastic key type
 typedef enum {
@@ -74,6 +103,14 @@ static const value_string meshtastic_key_size[] = {
   { KEY_SIZE_1BYTE, "1 Byte" },
   { KEY_SIZE_128BITS, "128 bits" },
   { KEY_SIZE_256BITS, "256 bits" },
+  { 0, NULL }
+};
+
+static const value_string meshtastic_portnum[] = {
+  { 0, "Unknown"},
+  { 1, "Text Message" },
+  { 2, "Remote Hardware" },
+  { 3, "Position App" },
   { 0, NULL }
 };
 
@@ -145,6 +182,7 @@ void proto_reg_handoff_meshtastic(void);
 
 static int dissect_meshtastic(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data) {
    int32_t current_offset = 0;
+   int32_t decrypted_offset = 0;
  
    // Set columns
    col_set_str(pinfo->cinfo, COL_PROTOCOL, "Meshtastic");
@@ -253,9 +291,32 @@ static int dissect_meshtastic(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tre
    
    tvbuff_t* tvb_decrypted = tvb_new_child_real_data(tvb, chiper_payload_block, payload_len, payload_len);
    tvb_decrypted = tvb_new_subset_length_caplen(tvb_decrypted, 0, payload_len, payload_len);
+   
 
-   proto_tree_add_item(ti_radio, hf_meshtastic_decrypted_block, tvb_decrypted, 0, payload_len, ENC_NA);
+   proto_item *pi_decrypted = proto_tree_add_item(ti_radio, hf_meshtastic_decrypted_block, tvb_decrypted, 0, payload_len, ENC_NA);
    add_new_data_source(pinfo, tvb_decrypted, "Decrypted Meshtastic Packet");
+   proto_tree *subtree_decrypted = proto_item_add_subtree(pi_decrypted, ett_cipher_block);
+
+   // Byte IDK what is this so I skip for now
+   // TODO: Find this byte
+
+   decrypted_offset += 1;
+   uint8_t portnum = tvb_get_uint8(tvb_decrypted, decrypted_offset);
+   proto_item *pi_portnum = proto_tree_add_item(subtree_decrypted, hf_mstic_type_packet, tvb_decrypted, decrypted_offset, 1, portnum);
+   col_set_str(pinfo->cinfo, COL_INFO, val_to_str_const(portnum, meshtastic_portnum, "Not supported yet"));
+
+   if (portnum == 1) {
+    decrypted_offset += 1; // Still not enumerated
+    decrypted_offset += 1; // Still not enumerated
+    
+    proto_tree_add_item(subtree_decrypted, hf_mstic_textapp_message_len, tvb_decrypted, decrypted_offset, 1, ENC_NA);
+    decrypted_offset += 1;
+    
+    uint16_t message_len = tvb_captured_length_remaining(tvb_decrypted, decrypted_offset);
+    proto_tree_add_item(subtree_decrypted, hf_mstic_textapp_message, tvb_decrypted, decrypted_offset, message_len, ENC_ASCII | ENC_UTF_8);
+
+    // Has emoji
+   }
    
    return 0;
  }
@@ -277,12 +338,19 @@ static int dissect_meshtastic(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tre
        {&hf_meshtastic_relaynode, {"Relay Node", "meshtastic.relaynode", FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL}},
        {&hf_meshtastic_payload, {"Payload", "meshtastic.payload", FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL}},
        {&hf_meshtastic_decrypted_block, {"Decrypted", "meshtastic.decryp_block", FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL}},  
+       {&hf_mstic_type_packet, {"Portnum", "meshtastic.portnum", FT_UINT8, BASE_DEC, VALS(meshtastic_portnum), 0, NULL, HFILL}}
+   };
+
+   static hf_register_info hf_app_text_message[] = {
+    {&hf_mstic_textapp_message_len, {"Length", "meshtastic.textapp_message_len", FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL}},
+    {&hf_mstic_textapp_message, {"Message", "meshtastic.textapp_message", FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL}},
    };
  
    // Protocol subtrees array
    static int *ett[] = {
       &ett_header,
       &ett_flags,
+      &ett_cipher_block,
    };
  
    // Register protocol
@@ -293,6 +361,7 @@ static int dissect_meshtastic(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tre
  
    // Register header fields
    proto_register_field_array(proto_meshtastic, hf, array_length(hf));
+   proto_register_field_array(proto_meshtastic, hf_app_text_message, array_length(hf_app_text_message));
  
    // Register subtrees
    proto_register_subtree_array(ett, array_length(ett));
