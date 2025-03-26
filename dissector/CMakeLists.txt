@@ -1,5 +1,6 @@
 # CMakeLists.txt
 #
+# SPDX-FileCopyrightText: © 2025 Antonio Vázquez Blanco <antoniovazquezblanco@gmail.com>
 # SPDX-FileCopyrightText: © 2025 Kevin Leon <kevinleon.morales@gmail.com>
 # SPDX-License-Identifier: GPL-2.0-or-later
 
