@@ -1,5 +1,6 @@
 /* meshtastic.c
  *
+ * SPDX-FileCopyrightText: © 2025 Antonio Vázquez Blanco <antoniovazquezblanco@gmail.com>
  * SPDX-FileCopyrightText: © 2025 Kevin Leon <kevinleon.morales@gmail.com>
  * SPDX-License-Identifier: GPL-2.0-or-later
  *
@@ -39,7 +40,7 @@ static int ett_flags;
 // Meshtastic key type
 typedef struct
 {
-  char *channel_name;
+  char *key_name;
   char *key_base64;
 } meshtastic_key_t;
 
@@ -48,7 +49,7 @@ static uat_t *uat_keys;
 static meshtastic_key_t *uat_meshtastic_keys;
 static unsigned uat_meshtastic_keys_num;
 
-UAT_CSTRING_CB_DEF(uat_meshtastic_keys_list, channel_name, meshtastic_key_t)
+UAT_CSTRING_CB_DEF(uat_meshtastic_keys_list, key_name, meshtastic_key_t)
 UAT_CSTRING_CB_DEF(uat_meshtastic_keys_list, key_base64, meshtastic_key_t)
 
 bool uat_meshtastic_keys_fld_name_cb(void *r _U_, const char *p, unsigned len _U_, const void *u1 _U_, const void *u2 _U_, char **err)
@@ -81,7 +82,7 @@ bool uat_meshtastic_keys_fld_key_cb(void *r _U_, const char *p, unsigned len _U_
 static void uat_meshtastic_keys_free_cb(void *r)
 {
   meshtastic_key_t *h = (meshtastic_key_t *)r;
-  g_free(h->channel_name);
+  g_free(h->key_name);
   g_free(h->key_base64);
 }
 
@@ -90,7 +91,7 @@ static void *uat_meshtastic_keys_copy_cb(void *dest, const void *orig, size_t le
   const meshtastic_key_t *o = (const meshtastic_key_t *)orig;
   meshtastic_key_t *d = (meshtastic_key_t *)dest;
 
-  d->channel_name = g_strdup(o->channel_name);
+  d->key_name = g_strdup(o->key_name);
   d->key_base64 = g_strdup(o->key_base64);
 
   return d;
@@ -200,7 +201,7 @@ void proto_register_meshtastic(void)
   module_t *meshtastic_module = prefs_register_protocol(proto_meshtastic, proto_reg_handoff_meshtastic);
 
   static uat_field_t uat_meshtastic_key_flds[] = {
-      UAT_FLD_CSTRING_OTHER(uat_meshtastic_keys_list, channel_name, "Channel name", uat_meshtastic_keys_fld_name_cb, "Channel name"),
+      UAT_FLD_CSTRING_OTHER(uat_meshtastic_keys_list, key_name, "Key name", uat_meshtastic_keys_fld_name_cb, "Key name"),
       UAT_FLD_CSTRING_OTHER(uat_meshtastic_keys_list, key_base64, "Base64 key", uat_meshtastic_keys_fld_key_cb, "Key in base64 format"),
       UAT_END_FIELDS};
 
