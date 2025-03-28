@@ -11,7 +11,6 @@
 #include <glib.h>
 #include <wiretap/wtap.h>
 #include <wsutil/wsgcrypt.h>
-#include "packet-meshtastic.h"
 
 #define MESHTASTIC_ADDR_LEN 4
 #define MESHTASTIC_PKTID_LEN 4
@@ -53,7 +52,7 @@ static int hf_mstic_bitfield;
 static int hf_mstic_textapp_message_len;
 static int hf_mstic_textapp_message;
 // Portnum 3 - Position
-static int hf_mstic_position_latitude;
+// static int hf_mstic_position_latitude;
 // Portnum 67 - Telemetry
 // TELEMETRY_APP time: 1742950869
 // device_metrics {
@@ -69,11 +68,11 @@ static int hf_mstic_position_latitude;
 // air_util_tx: 0.00450000027
 // uptime_seconds: 45
 
-static int hf_mstic_telemetry_time;
-static int hf_mstic_telemetry_dev_battery;
-static int hf_mstic_telemetry_dev_voltage;
-static int hf_mstic_telemetry_dev_channel;
-static int hf_mstic_telemetry_dev_air;
+// static int hf_mstic_telemetry_time;
+// static int hf_mstic_telemetry_dev_battery;
+// static int hf_mstic_telemetry_dev_voltage;
+// static int hf_mstic_telemetry_dev_channel;
+// static int hf_mstic_telemetry_dev_air;
 
 // Subtree pointers
 static int ett_header;
@@ -193,6 +192,7 @@ static int dissect_meshtastic(tvbuff_t* tvb,
                               packet_info* pinfo,
                               proto_tree* tree,
                               void* data) {
+  (void)data;
   int32_t current_offset = 0;
   int32_t decrypted_offset = 0;
 
