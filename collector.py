@@ -1,9 +1,23 @@
-# zmq_server.py
+# Written by Jahaziel 2025
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+# This script only shows how to use has publisher for another device to communicate with the transporter
+
 import zmq
 import time
 import argparse
 import serial
-import os
 
 DEFAULT_ZMQ_HOST = "localhost"
 DEFAULT_ZMQ_PORT = 20000
@@ -33,8 +47,7 @@ def main():
   try:
     while True:
       msg = ser.readline()
-      # msg = msg[4:-8]
-      print(f"[SERVER] Sending {msg.hex()}")
+      print(f"[SERVER] Sending {msg}")
       socket.send(msg)
       time.sleep(0.1)
   except KeyboardInterrupt:

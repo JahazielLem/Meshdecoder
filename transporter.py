@@ -1,3 +1,19 @@
+# Written by Jahaziel 2025
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+# This script works as transporter to connect with wireshark
+
 import zmq
 import time
 import queue
@@ -6,7 +22,7 @@ import argparse
 import platform
 from modules.fifo import PipeUnix, PipeWindows, DEFAULT_PIPEPATH
 from modules.pcap import get_global_header, Pcap, LINKTYPE_USER_DLT
-from modules.utils import LOG_SUCCESS, hexdump
+from modules.utils import LOG_SUCCESS, LOG_WARNING, LOG_ERROR, LOG_INFO, hexdump
 
 DEFAULT_ZMQ_HOST = "localhost"
 DEFAULT_ZMQ_PORT = 20000
@@ -97,6 +113,10 @@ if __name__ == "__main__":
   zmq_publisher.add_argument("-pipe", help="Pipeline path for wireshark", default=DEFAULT_PIPEPATH)
   zmq_publisher.add_argument("-l", "--linklayer", help="Linklayer for the dissector", default=LINKTYPE_USER_DLT)
   args = parser.parse_args()
-  print(args)
+  LOG_WARNING("This script is still under development, use by you own risk")
+  LOG_INFO("Tested on:")
+  LOG_SUCCESS("[*] MacOS -> Happy path works well :P")
+  LOG_WARNING("[x] Linux -> Not testing yet")
+  LOG_ERROR("[x] Windows -> Still in development")
   transport = Transporter(args.ip, args.port, args.pipe, args.linklayer)
   transport.start()

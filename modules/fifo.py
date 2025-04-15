@@ -104,7 +104,7 @@ class PipeWindows(Pipeline):
     try:
       if not os.path.exists(self.pipe_path):
         self.pipeline = win32pipe.CreateNamedPipe(
-            self.fifo_path,
+            self.pipe_path,
             win32pipe.PIPE_ACCESS_DUPLEX,
             win32pipe.PIPE_TYPE_MESSAGE
             | win32pipe.PIPE_READMODE_MESSAGE
