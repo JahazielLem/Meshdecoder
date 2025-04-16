@@ -49,7 +49,7 @@ class ZMQClient:
   def recv(self):
     while self.running:
       try:
-        if self.socket.poll(10):
+        if self.socket.poll(10) != 0:
           data = self.socket.recv()
           if data:
             print("Packet:")

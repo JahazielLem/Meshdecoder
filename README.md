@@ -55,9 +55,24 @@ Main functionality:
 - Publishes to an address like tcp://localhost:20000 (by default), which can be changed via command-line arguments.
 This script is useful for broadcasting received packets from a physical device to other systems or processes via ZeroMQ.
 
+# Install Linux Dissector
+For linux until I work in a better way you need to copy to the installation plugins
+```bash
+# Copy the dissector to the install location of wireshark
+sudo cp meshtastic.so /usr/lib/arch64-linux-gnu/wireshark/plugins/4.4/epan
+```
+
+> [!NOTE]
+> If you don't know where is your installation path, you can view the path follow the next steps: Open wireshar `Help` -> `About wireshark` -> `Folders` -> `Global Plugins` there's the path
+
+![Linux dissector install](./static/linuxInstall.gif)
 
 # Demo
+## Demo with LoRa usb stick
 ![Demo using a lora usb stick board and the transporter](./static/trasnsporter_collector.gif)
+
+## Demo with GNU-Radio
+![Demo using a GNU-Radio](./static/gnuRadio_meshtastic.gif)
 
 ## Special thanks for contribution:
   - Antonio Vázquez Blanco -> [Github](https://github.com/antoniovazquezblanco) | [X](https://x.com/antonvblanco)
